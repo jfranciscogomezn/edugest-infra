@@ -1,0 +1,13 @@
+# Env files with real secrets
+local/.env
+aws/rds/.env
+
+# Terraform state
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+
+# OS
+.DS_Store
+Thumbs.db
