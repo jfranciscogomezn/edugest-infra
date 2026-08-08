@@ -1,17 +1,48 @@
-# RDS PostgreSQL — Entorno cloud-dev
+# RDS PostgreSQL -- Entorno cloud-dev
 
 Scripts para crear y gestionar la instancia **AWS RDS PostgreSQL** usada como
 base de datos compartida del equipo de desarrollo.
 
-> Se usa exclusivamente para el entorno `cloud-dev`. Producción y staging
-> tendrán su propia infraestructura gestionada por Terraform.
+> Solo para `cloud-dev`. Produccion/staging iran con Terraform.
 
 ---
 
 ## Prerrequisitos
 
-- AWS CLI configurado (`aws configure`) con un perfil con permisos sobre RDS, VPC y EC2
-- Para `init-rds-db.*`: `psql` instalado localmente o acceso via cliente SQL
+- AWS CLI configurado (`aws configure`)
+- Permisos IAM: RDS + EC2/VPC (lectura/escritura basica)
+- Para `init-rds-db.*`: `psql` **o** Docker corriendo
+
+---
+
+## Flujo completo
+
+```powershell
+# 1) Crear instancia (~8 min)
+.\create-rds.ps1
+
+# 2) Crear BD security + usuario + extensiones
+.\init-rds-db.ps1 -Endpoint "<endpoint-del-paso-1>" -MasterPassword "<tu-password>"
+
+# 3) Arrancar ms-security
+$env:SPRING_PROFILES_ACTIVE = "cloud-dev"
+$env:DB_HOST = "<endpoint>"
+$env:DB_PASSWORD = "changeme_dev"
+mvn spring-boot:run
+```
+
+---
+
+## Decisiones importantes de los scripts
+
+| Tema | Decision | Por que |
+|------|----------|---------|
+| `--db-name` | **No se usa** en create | `security` es palabra **reservada** en el API `CreateDBInstance` de RDS |
+| BD `security` | Se crea en `init-rds-db.*` via SQL | PostgreSQL si permite el nombre; solo el API de RDS lo bloquea |
+| Version engine | Detectada dinamicamente | Evita hardcodear `16.8` u otras que no existan en la region |
+| Clase | `db.t3.micro` + 20GB `gp2` | Elegible Free Tier |
+| Acceso | Public + SG 0.0.0.0/0 | Solo desarrollo; usar `restrict-ip.ps1` despues |
+| Idempotencia | Si la instancia ya existe, muestra el endpoint | Permite re-ejecutar sin romper |
 
 ---
 
@@ -19,90 +50,80 @@ base de datos compartida del equipo de desarrollo.
 
 ### `create-rds.ps1` / `create-rds.sh`
 
-Crea una instancia RDS PostgreSQL 16 en la VPC por defecto de tu cuenta AWS.
+Crea la instancia RDS PostgreSQL 16 (sin base de datos de aplicacion).
 
-**Parámetros:**
-
-| Parámetro         | Default            | Descripción                            |
-|-------------------|--------------------|----------------------------------------|
-| `-Region`         | `us-east-1`        | Región AWS                             |
-| `-DbPassword`     | `changeme_dev`     | Contraseña del usuario `postgres`      |
-| `-InstanceClass`  | `db.t3.micro`      | Clase de instancia (Free Tier elegible)|
+| Parametro | Default | Descripcion |
+|-----------|---------|-------------|
+| `-Region` | `us-east-1` | Region AWS |
+| `-DbInstanceId` | `edugest-dev` | Identificador de la instancia |
+| `-DbPassword` | (interactivo) | Password del usuario master `postgres` |
 
 ```powershell
 .\create-rds.ps1
-# Con parámetros personalizados:
-.\create-rds.ps1 -Region us-west-2 -DbPassword "miPassword123"
+.\create-rds.ps1 -Region us-east-1 -DbPassword "MiPassword123!"
 ```
 
 ```bash
 chmod +x create-rds.sh
-./create-rds.sh
+./create-rds.sh --password "MiPassword123!"
 ```
-
-El script imprime el **endpoint** al finalizar.
-
----
 
 ### `init-rds-db.ps1` / `init-rds-db.sh`
 
-Crea el usuario `security_user`, la base de datos `security`, habilita
-las extensiones necesarias y configura el parámetro GUC para RLS.
+Crea la BD `security`, usuario `security_user`, extensiones y GUC de RLS.
 
-**Parámetros:**
-
-| Parámetro       | Requerido | Descripción                          |
-|-----------------|-----------|--------------------------------------|
-| `-RdsEndpoint`  | Si        | Endpoint del RDS (xxxx.rds.amazonaws.com) |
-| `-MasterPassword`| No       | Contraseña de `postgres` (default: `changeme_dev`) |
+| Parametro | Requerido | Descripcion |
+|-----------|-----------|-------------|
+| `-Endpoint` | Si | Endpoint RDS |
+| `-MasterPassword` | Si | Password del usuario `postgres` |
 
 ```powershell
-.\init-rds-db.ps1 -RdsEndpoint "xxxx.rds.amazonaws.com"
+.\init-rds-db.ps1 -Endpoint "xxxx.us-east-1.rds.amazonaws.com" -MasterPassword "MiPassword123!"
 ```
 
 ```bash
-./init-rds-db.sh xxxx.rds.amazonaws.com
+./init-rds-db.sh --endpoint "xxxx.us-east-1.rds.amazonaws.com" --master-password "MiPassword123!"
 ```
-
----
 
 ### `restrict-ip.ps1`
 
-Actualiza la IP permitida en el Security Group de RDS para que solo tu
-IP pública actual tenga acceso al puerto 5432.
+Agrega tu IP actual al Security Group (y opcionalmente quita `0.0.0.0/0`).
 
 ```powershell
-.\restrict-ip.ps1 -SecurityGroupId "sg-xxxxxxxxxxxx"
+.\restrict-ip.ps1
+.\restrict-ip.ps1 -RemoveAll
 ```
 
 ---
 
-## Conectar ms-security a RDS
-
-Una vez creada la instancia, arrancar `ms-security` con el perfil `cloud-dev`:
+## Conectar ms-security
 
 ```powershell
-# Windows PowerShell
-$env:SPRING_PROFILES_ACTIVE="cloud-dev"
-$env:DB_HOST="xxxx.rds.amazonaws.com"
-$env:DB_PASSWORD="changeme_dev"
+$env:SPRING_PROFILES_ACTIVE = "cloud-dev"
+$env:DB_HOST = "xxxx.us-east-1.rds.amazonaws.com"
+$env:DB_PASSWORD = "changeme_dev"
 mvn spring-boot:run
 ```
 
-```bash
-SPRING_PROFILES_ACTIVE=cloud-dev DB_HOST=xxxx.rds.amazonaws.com mvn spring-boot:run
-```
+Flyway aplica las migraciones automaticamente al arrancar.
 
 ---
 
 ## Costos estimados (Free Tier)
 
-| Recurso                    | Costo Free Tier          | Costo fuera de Free Tier |
-|----------------------------|--------------------------|--------------------------|
-| `db.t3.micro` (750 h/mes)  | **$0** primer año        | ~$13/mes                 |
-| Almacenamiento 20 GB gp2   | **$0** (incluido)        | ~$2.30/mes               |
-| Snapshots 20 GB            | **$0** (incluido)        | ~$0.095/GB/mes           |
+| Recurso | Free Tier | Fuera de Free Tier |
+|---------|-----------|--------------------|
+| `db.t3.micro` 750 h/mes | $0 (12 meses) | ~$13/mes |
+| 20 GB gp2 | $0 | ~$2.30/mes |
 
-> El Free Tier aplica solo durante **12 meses** desde la creación de la cuenta AWS.
-> Después de ese periodo, o si ya no estás en Free Tier, considerar RDS Serverless v2
-> o eliminar la instancia cuando no se use.
+---
+
+## Troubleshooting
+
+| Error | Causa | Solucion |
+|-------|-------|----------|
+| `DBName security cannot be used` | Nombre reservado en API RDS | Usar scripts actualizados (sin `--db-name`) |
+| `Cannot find version 16.x` | Version hardcodeada inexistente | Scripts ya detectan la version |
+| `Unknown options: 16.9, 16.10...` | Parsing malo de versiones en PowerShell | Scripts ya ordenan y toman una sola version |
+| Timeout / connection refused en init | SG no permite tu IP o instancia no ready | Espera `available` y revisa inbound 5432 |
+| Password rejected | Contiene `/` `"` `@` o < 8 chars | Usa otra contrasena |
