@@ -11,14 +11,15 @@
 #   .\create-rds.ps1 -Region "us-east-1" -DbPassword "MiPassword123!"
 #
 # Notas importantes:
-#   - NO se pasa --db-name: "security" es palabra reservada en el API de RDS.
-#     La base de datos 'security' se crea luego con init-rds-db.ps1 via SQL.
+#   - Convencion de BD: db_<servicio>  →  db_security
 #   - La version de PostgreSQL 16 se detecta dinamicamente (no hardcodeada).
+#   - init-rds-db.ps1 asegura usuario, extensiones y GUC (idempotente).
 # =============================================================================
 
 param(
     [string]$Region         = "us-east-1",
     [string]$DbInstanceId   = "edugest-dev",
+    [string]$DbName         = "db_security",
     [string]$MasterUsername = "postgres",
     [string]$DbPassword     = "",
     [string]$AppUsername    = "security_user",
@@ -67,8 +68,7 @@ if ($DbPassword -match '[/"@]') {
 
 Write-Host ""
 Write-Host "=== EduGest: Creando instancia RDS PostgreSQL 16 ===" -ForegroundColor Cyan
-Write-Host "Region: $Region | Instancia: $DbInstanceId"
-Write-Host "Nota: la BD 'security' se crea en init-rds-db.ps1 (no via --db-name)." -ForegroundColor DarkGray
+Write-Host "Region: $Region | Instancia: $DbInstanceId | DB: $DbName"
 
 # --- 0. Si la instancia ya existe, solo mostrar endpoint -----------------------
 Write-Host ""
@@ -222,10 +222,8 @@ Write-Host "  Version seleccionada: $EngineVersion" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "[5/6] Creando instancia RDS (puede tardar 5-10 minutos)..." -ForegroundColor Yellow
-Write-Host "  Clase: db.t3.micro | Storage: 20GB gp2 | Public: yes" -ForegroundColor DarkGray
+Write-Host "  Clase: db.t3.micro | Storage: 20GB gp2 | DB: $DbName | Public: yes" -ForegroundColor DarkGray
 
-# IMPORTANTE: NO usar --db-name. "security" es reservado en CreateDBInstance.
-# La BD 'security' se crea con SQL en init-rds-db.ps1.
 $createOut = aws rds create-db-instance `
     --db-instance-identifier $DbInstanceId `
     --db-instance-class db.t3.micro `
@@ -233,6 +231,7 @@ $createOut = aws rds create-db-instance `
     --engine-version $EngineVersion `
     --master-username $MasterUsername `
     --master-user-password $DbPassword `
+    --db-name $DbName `
     --allocated-storage 20 `
     --storage-type gp2 `
     --no-multi-az `
@@ -285,7 +284,8 @@ Write-Host " Engine   : PostgreSQL $EngineVersion"
 Write-Host " Region   : $Region"
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "SIGUIENTE PASO - Crear la BD 'security' y el usuario de app:" -ForegroundColor Yellow
+Write-Host "SIGUIENTE PASO - Usuario app, extensiones y GUC:" -ForegroundColor Yellow
 Write-Host "  .\init-rds-db.ps1 -Endpoint `"$Endpoint`" -MasterPassword `"<tu-password>`""
 Write-Host ""
+Write-Host "BD de aplicacion: $DbName" -ForegroundColor Yellow
 Write-Host "Guarda el endpoint. Lo necesitaras como DB_HOST en ms-security." -ForegroundColor Yellow

@@ -3,7 +3,7 @@
 # Ejecutar DESPUES de create-rds.ps1
 #
 # Crea:
-#   - Base de datos 'security'  (no se puede crear via --db-name del API RDS)
+#   - Base de datos 'db_security' (convencion: db_<servicio>)
 #   - Usuario 'security_user'
 #   - Extensiones: uuid-ossp, citext, pgcrypto
 #   - Permisos schema public
@@ -24,7 +24,7 @@ param(
     [string]$MasterPassword,
 
     [string]$MasterUsername = "postgres",
-    [string]$AppDb          = "security",
+    [string]$AppDb          = "db_security",
     [string]$AppUsername    = "security_user",
     [string]$AppPassword    = "changeme_dev"
 )
@@ -119,7 +119,6 @@ Verifica:
 Write-Host "  Conexion OK" -ForegroundColor Green
 
 # --- [1/5] Crear base de datos ------------------------------------------------
-# create-rds.ps1 NO puede usar --db-name security (reservado en API RDS).
 Write-Host ""
 Write-Host "[1/5] Creando base de datos '$AppDb'..." -ForegroundColor Yellow
 $dbExists = Get-PsqlScalar -Database "postgres" -Sql "SELECT 1 FROM pg_database WHERE datname = '$AppDb';"

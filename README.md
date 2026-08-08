@@ -17,7 +17,7 @@ edugest-infra/
 │   ├── .env.example                # Variables de entorno de ejemplo
 │   └── postgres/
 │       └── init/
-│           └── 01_security_db.sql  # DB + usuario para ms-security
+│           └── 01_db_security.sql  # DB db_security + usuario para ms-security
 │
 ├── aws/
 │   └── rds/                        # Scripts para RDS PostgreSQL en AWS

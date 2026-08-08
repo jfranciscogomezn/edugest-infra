@@ -12,7 +12,7 @@ set -euo pipefail
 ENDPOINT=""
 MASTER_PASSWORD=""
 MASTER_USERNAME="${MASTER_USERNAME:-postgres}"
-APP_DB="${APP_DB:-security}"
+APP_DB="${APP_DB:-db_security}"
 APP_USERNAME="${APP_USERNAME:-security_user}"
 APP_PASSWORD="${APP_PASSWORD:-changeme_dev}"
 

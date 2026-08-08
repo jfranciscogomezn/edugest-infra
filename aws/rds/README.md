@@ -21,7 +21,7 @@ base de datos compartida del equipo de desarrollo.
 # 1) Crear instancia (~8 min)
 .\create-rds.ps1
 
-# 2) Crear BD security + usuario + extensiones
+# 2) Usuario app, extensiones y GUC (BD db_security)
 .\init-rds-db.ps1 -Endpoint "<endpoint-del-paso-1>" -MasterPassword "<tu-password>"
 
 # 3) Arrancar ms-security
@@ -37,9 +37,8 @@ mvn spring-boot:run
 
 | Tema | Decision | Por que |
 |------|----------|---------|
-| `--db-name` | **No se usa** en create | `security` es palabra **reservada** en el API `CreateDBInstance` de RDS |
-| BD `security` | Se crea en `init-rds-db.*` via SQL | PostgreSQL si permite el nombre; solo el API de RDS lo bloquea |
-| Version engine | Detectada dinamicamente | Evita hardcodear `16.8` u otras que no existan en la region |
+| Nombre de BD | `db_security` | Convencion `db_<servicio>` (repo/servicio: security) |
+| Version engine | Detectada dinamicamente | Evita hardcodear versiones inexistentes en la region |
 | Clase | `db.t3.micro` + 20GB `gp2` | Elegible Free Tier |
 | Acceso | Public + SG 0.0.0.0/0 | Solo desarrollo; usar `restrict-ip.ps1` despues |
 | Idempotencia | Si la instancia ya existe, muestra el endpoint | Permite re-ejecutar sin romper |
@@ -50,12 +49,13 @@ mvn spring-boot:run
 
 ### `create-rds.ps1` / `create-rds.sh`
 
-Crea la instancia RDS PostgreSQL 16 (sin base de datos de aplicacion).
+Crea la instancia RDS PostgreSQL 16 con la BD `db_security`.
 
 | Parametro | Default | Descripcion |
 |-----------|---------|-------------|
 | `-Region` | `us-east-1` | Region AWS |
 | `-DbInstanceId` | `edugest-dev` | Identificador de la instancia |
+| `-DbName` | `db_security` | Nombre de la BD (convencion `db_<servicio>`) |
 | `-DbPassword` | (interactivo) | Password del usuario master `postgres` |
 
 ```powershell
@@ -70,7 +70,7 @@ chmod +x create-rds.sh
 
 ### `init-rds-db.ps1` / `init-rds-db.sh`
 
-Crea la BD `security`, usuario `security_user`, extensiones y GUC de RLS.
+Asegura la BD `db_security`, usuario `security_user`, extensiones y GUC de RLS.
 
 | Parametro | Requerido | Descripcion |
 |-----------|-----------|-------------|
@@ -122,7 +122,7 @@ Flyway aplica las migraciones automaticamente al arrancar.
 
 | Error | Causa | Solucion |
 |-------|-------|----------|
-| `DBName security cannot be used` | Nombre reservado en API RDS | Usar scripts actualizados (sin `--db-name`) |
+| `DBName security cannot be used` | Nombre reservado en API RDS | Usar `db_security` (scripts actualizados) |
 | `Cannot find version 16.x` | Version hardcodeada inexistente | Scripts ya detectan la version |
 | `Unknown options: 16.9, 16.10...` | Parsing malo de versiones en PowerShell | Scripts ya ordenan y toman una sola version |
 | Timeout / connection refused en init | SG no permite tu IP o instancia no ready | Espera `available` y revisa inbound 5432 |

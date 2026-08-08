@@ -8,13 +8,13 @@
 #   ./create-rds.sh
 #   ./create-rds.sh --region us-east-1 --password "MiPassword123!"
 #
-# Nota: NO se pasa --db-name. "security" es reservado en el API de RDS.
-#       La BD se crea con init-rds-db.sh via SQL.
+# Convencion de BD: db_<servicio>  →  db_security
 # =============================================================================
 set -euo pipefail
 
 REGION="${REGION:-us-east-1}"
 DB_INSTANCE_ID="${DB_INSTANCE_ID:-edugest-dev}"
+DB_NAME="${DB_NAME:-db_security}"
 MASTER_USERNAME="${MASTER_USERNAME:-postgres}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 
@@ -44,7 +44,7 @@ fi
 [[ "$DB_PASSWORD" == *@* ]] && err "La contrasena no puede contener @"
 
 echo -e "${CYAN}=== EduGest: Creando instancia RDS PostgreSQL 16 ===${NC}"
-echo "Region: $REGION | Instancia: $DB_INSTANCE_ID"
+echo "Region: $REGION | Instancia: $DB_INSTANCE_ID | DB: $DB_NAME"
 
 # --- 0. Ya existe? ------------------------------------------------------------
 echo -e "\n${YELLOW}[0/6] Verificando si la instancia ya existe...${NC}"
@@ -130,7 +130,6 @@ ENGINE_VERSION=$(aws rds describe-db-engine-versions \
 ok "Version seleccionada: $ENGINE_VERSION"
 
 echo -e "\n${YELLOW}[5/6] Creando instancia RDS (~5-10 min)...${NC}"
-# IMPORTANTE: sin --db-name. "security" es reservado en CreateDBInstance.
 if ! aws rds create-db-instance \
     --db-instance-identifier "$DB_INSTANCE_ID" \
     --db-instance-class db.t3.micro \
@@ -138,6 +137,7 @@ if ! aws rds create-db-instance \
     --engine-version "$ENGINE_VERSION" \
     --master-username "$MASTER_USERNAME" \
     --master-user-password "$DB_PASSWORD" \
+    --db-name "$DB_NAME" \
     --allocated-storage 20 \
     --storage-type gp2 \
     --no-multi-az \
