@@ -109,11 +109,16 @@ if ($LASTEXITCODE -ne 0) {
 # --- 5. Crear la instancia RDS ------------------------------------------------
 Write-Host ""
 Write-Host "[5/6] Consultando versiones de PostgreSQL 16 disponibles en $Region..." -ForegroundColor Yellow
-$EngineVersion = (aws rds describe-db-engine-versions `
+$versionsRaw = aws rds describe-db-engine-versions `
     --engine postgres `
     --query "DBEngineVersions[?starts_with(EngineVersion,'16.')].EngineVersion" `
-    --output json `
-    --region $Region | ConvertFrom-Json | Sort-Object | Select-Object -Last 1)
+    --output text `
+    --region $Region
+
+# El output text devuelve los valores separados por tabulaciones en una sola linea
+$versions = ($versionsRaw -split '\s+') | Where-Object { $_ -match '^16\.' }
+# Ordenar numericamente por el numero menor (16.3 < 16.9 < 16.10 < 16.14)
+$EngineVersion = ($versions | Sort-Object { [int]($_ -split '\.')[1] } | Select-Object -Last 1).ToString().Trim()
 
 if ([string]::IsNullOrEmpty($EngineVersion)) {
     Write-Error "No se encontro ninguna version de PostgreSQL 16 disponible en $Region."
