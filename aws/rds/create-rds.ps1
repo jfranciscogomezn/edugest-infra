@@ -108,12 +108,26 @@ if ($LASTEXITCODE -ne 0) {
 
 # --- 5. Crear la instancia RDS ------------------------------------------------
 Write-Host ""
+Write-Host "[5/6] Consultando versiones de PostgreSQL 16 disponibles en $Region..." -ForegroundColor Yellow
+$EngineVersion = (aws rds describe-db-engine-versions `
+    --engine postgres `
+    --query "DBEngineVersions[?starts_with(EngineVersion,'16.')].EngineVersion" `
+    --output json `
+    --region $Region | ConvertFrom-Json | Sort-Object | Select-Object -Last 1)
+
+if ([string]::IsNullOrEmpty($EngineVersion)) {
+    Write-Error "No se encontro ninguna version de PostgreSQL 16 disponible en $Region."
+    exit 1
+}
+Write-Host "  Version seleccionada: $EngineVersion" -ForegroundColor Green
+
+Write-Host ""
 Write-Host "[5/6] Creando instancia RDS (puede tardar 5-10 minutos)..." -ForegroundColor Yellow
 aws rds create-db-instance `
     --db-instance-identifier $DbInstanceId `
     --db-instance-class db.t3.micro `
     --engine postgres `
-    --engine-version "16.8" `
+    --engine-version $EngineVersion `
     --master-username $MasterUsername `
     --master-user-password $DbPassword `
     --db-name $DbName `
