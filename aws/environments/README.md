@@ -50,10 +50,13 @@ Prod no hereda el recorte Free Tier.
 
 ```
 1. QA (ahora)
+   aws/environments/qa/create-budget.ps1 -Email "..."  # alerta 300 USD/mes
    aws/environments/qa/harden-rds.ps1      # retention 0, tags Environment=qa
    aws/environments/qa/deploy-ec2.ps1      # t3.micro + SSM
    aws/environments/qa/apply-schedule.ps1  # EventBridge 09:00 / 01:00 COT
-   Front: Amplify apuntando al API_URL de esa EC2
+   aws/environments/qa/setup-ci.ps1        # S3, OIDC, Amplify, EIP (no destruye EC2)
+   aws/environments/qa/bootstrap-ec2.ps1   # Caddy + systemd por SSM
+   GitHub: secret QA_AWS_ROLE_ARN; push master/main
 
 2. PROD (cuando haya cliente que pague)
    No copiar scripts de qa/.

@@ -1,0 +1,16 @@
+[Unit]
+Description=EduGest ms-security QA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/edugest/ms-security.env
+Environment=JAVA_TOOL_OPTIONS=-Xms128m -Xmx384m
+ExecStart=/usr/bin/java -jar /opt/edugest/ms-security.jar
+Restart=on-failure
+RestartSec=8
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

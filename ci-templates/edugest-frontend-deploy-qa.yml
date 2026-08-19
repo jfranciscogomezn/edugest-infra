@@ -1,0 +1,56 @@
+name: Deploy QA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-qa-frontend
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: SPA to Amplify QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ secrets.QA_AWS_ROLE_ARN != '' }}
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.QA_AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Inject API URL and build
+        run: |
+          set -euo pipefail
+          API=$(aws ssm get-parameter --name /edugest/qa/api-base-url --query Parameter.Value --output text)
+          sed -i "s|__API_BASE_URL__|$API|g" src/environments/environment.qa.ts
+          npm ci
+          npx ng build --configuration=qa
+
+      - name: Upload to Amplify Hosting
+        run: |
+          set -euo pipefail
+          APP_ID=$(aws ssm get-parameter --name /edugest/qa/amplify-app-id --query Parameter.Value --output text)
+          cd dist/edugest-frontend/browser
+          zip -r "$GITHUB_WORKSPACE/web.zip" .
+          DEPLOY=$(aws amplify create-deployment --app-id "$APP_ID" --branch-name qa --output json)
+          JOB_ID=$(echo "$DEPLOY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["jobId"])')
+          UPLOAD=$(echo "$DEPLOY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["zipUploadUrl"])')
+          curl -sS -X PUT -H "Content-Type: application/zip" --data-binary @"$GITHUB_WORKSPACE/web.zip" "$UPLOAD"
+          aws amplify start-deployment --app-id "$APP_ID" --branch-name qa --job-id "$JOB_ID"

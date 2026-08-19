@@ -9,18 +9,37 @@ Perfil de aplicación: `cloud-dev` (ms-security). Login seed NORTE.
 
 | Paso | Script | Efecto |
 |------|--------|--------|
+| 0 | `.\create-budget.ps1 -Email "..."` | Alerta COST 300 USD/mes (no corta el cobro) |
 | 1 | `..\..\rds\create-rds.ps1` | Solo si aún no existe `edugest-dev` |
 | 2 | `.\harden-rds.ps1` | Tags `Environment=qa`, backup retention **0** |
 | 3 | `.\deploy-ec2.ps1` | `t3.micro` AL2023, Java 21, SSM, 8 GB |
 | 4 | `.\apply-schedule.ps1` | EventBridge: RDS 08:55–01:05, EC2 09:00–01:00 |
-| 5 | Amplify u origen Caddy | Front; `API_URL` a la EC2 |
+| 5 | `.\setup-ci.ps1` | S3, OIDC GitHub, Amplify, EIP, parametros SSM. **No destruye la EC2** |
+| 6 | `.\bootstrap-ec2.ps1` | Caddy + systemd por SSM en la instancia ya creada |
+| 7 | GitHub Actions | Push a `ms-security`/`edugest-frontend` publica JAR y SPA |
 
 ```powershell
 cd aws/environments/qa
+.\create-budget.ps1 -Email "tu-correo@dominio.com"
 .\harden-rds.ps1
 .\deploy-ec2.ps1
 .\apply-schedule.ps1
+.\setup-ci.ps1
+.\bootstrap-ec2.ps1
 ```
+
+No recrees la EC2 para el CI. `setup-ci` le asocia un Elastic IP y amplia el instance profile.
+
+Secret unico en **ambos** repos (`ms-security` y `edugest-frontend`):
+
+`QA_AWS_ROLE_ARN` = `arn:aws:iam::<cuenta>:role/edugest-qa-gha`
+
+(el script lo imprime). Luego:
+
+- Push a `master` en ms-security → JAR a S3 + restart `ms-security` por SSM
+- Push a `main` en edugest-frontend → `ng build --configuration=qa` + Amplify
+
+El API queda en `https://<eip-con-guiones>.sslip.io/api/v1` (Caddy, Let's Encrypt). El front en `https://qa.<appId>.amplifyapp.com`.
 
 Para quitar solo el horario (no borra RDS/EC2):
 

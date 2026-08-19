@@ -9,29 +9,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\config.ps1"
+. "$PSScriptRoot\common.ps1"
 if ($Region) { $script:Region = $Region }
-
-function Get-SingleText([string]$Raw) {
-    if ([string]::IsNullOrWhiteSpace($Raw)) { return "" }
-    return ($Raw -split '\s+' | Where-Object { $_ -and $_ -ne "None" } | Select-Object -First 1).ToString().Trim()
-}
-
-function Assert-Aws {
-    aws sts get-caller-identity --region $script:Region | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Credenciales AWS invalidas." }
-}
 
 function Resolve-QaEc2Id {
     param([string]$Given)
     if ($Given) { return $Given }
-    $id = Get-SingleText (aws ec2 describe-instances `
-        --filters "Name=tag:Name,Values=$script:Ec2Name" `
-                  "Name=tag:Environment,Values=$script:EnvName" `
-                  "Name=instance-state-name,Values=pending,running,stopping,stopped" `
+    return (Invoke-AwsCli ec2 describe-instances `
+        --filters "Name=tag:Name,Values=$($script:Ec2Name)" "Name=tag:Environment,Values=$($script:EnvName)" "Name=instance-state-name,Values=pending,running,stopping,stopped" `
         --query "Reservations[0].Instances[0].InstanceId" `
         --output text `
-        --region $script:Region)
-    return $id
+        --region $script:Region).Out
 }
 
 function Set-QaSchedule {
@@ -42,77 +30,76 @@ function Set-QaSchedule {
         [string]$InputJson,
         [string]$RoleArn
     )
-    $body = @{
-        Name                       = $Name
-        GroupName                  = $script:ScheduleGroup
-        ScheduleExpression         = $Expression
-        ScheduleExpressionTimezone = $script:Timezone
-        State                      = "ENABLED"
-        FlexibleTimeWindow         = @{ Mode = "OFF" }
-        Target                     = @{
-            Arn     = $TargetArn
-            RoleArn = $RoleArn
-            Input   = $InputJson
-        }
-    }
+    $inputEsc = $InputJson.Replace("\", "\\").Replace('"', '\"')
+    $json = '{' +
+        '"Name":"' + $Name + '",' +
+        '"GroupName":"' + $script:ScheduleGroup + '",' +
+        '"ScheduleExpression":"' + $Expression + '",' +
+        '"ScheduleExpressionTimezone":"' + $script:Timezone + '",' +
+        '"State":"ENABLED",' +
+        '"FlexibleTimeWindow":{"Mode":"OFF"},' +
+        '"Target":{"Arn":"' + $TargetArn + '","RoleArn":"' + $RoleArn + '","Input":"' + $inputEsc + '"}' +
+        '}'
     $tmp = Join-Path $env:TEMP "$Name.json"
-    $json = $body | ConvertTo-Json -Depth 6
     [IO.File]::WriteAllText($tmp, $json, [Text.UTF8Encoding]::new($false))
+    $uri = ConvertTo-AwsFileUri $tmp
 
-    aws scheduler get-schedule --name $Name --group-name $script:ScheduleGroup --region $script:Region 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        aws scheduler update-schedule --cli-input-json "file://$tmp" --region $script:Region | Out-Null
+    $exists = Invoke-AwsCli scheduler get-schedule --name $Name --group-name $script:ScheduleGroup --region $script:Region
+    if ($exists.Code -eq 0) {
+        $upd = Invoke-AwsCli scheduler update-schedule --cli-input-json $uri --region $script:Region
+        if ($upd.Code -ne 0) { throw "No se pudo actualizar el schedule $Name. $($upd.Text)" }
         Write-Host "  Actualizado: $Name" -ForegroundColor Yellow
     } else {
-        aws scheduler create-schedule --cli-input-json "file://$tmp" --region $script:Region | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el schedule $Name" }
+        $cr = Invoke-AwsCli scheduler create-schedule --cli-input-json $uri --region $script:Region
+        if ($cr.Code -ne 0) { throw "No se pudo crear el schedule $Name. $($cr.Text)" }
         Write-Host "  Creado: $Name" -ForegroundColor Green
     }
 }
 
-Assert-Aws
-$account = Get-SingleText (aws sts get-caller-identity --query Account --output text --region $script:Region)
-$roleArn = "arn:aws:iam::${account}:role/$script:SchedulerRoleName"
-$trust = Join-Path $PSScriptRoot "iam\scheduler-trust.json"
-$policy = Join-Path $PSScriptRoot "iam\scheduler-policy.json"
+$account = Assert-AwsCli
+$roleArn = "arn:aws:iam::${account}:role/$($script:SchedulerRoleName)"
+$trustUri = ConvertTo-AwsFileUri (Join-Path $PSScriptRoot "iam\scheduler-trust.json")
+$policyUri = ConvertTo-AwsFileUri (Join-Path $PSScriptRoot "iam\scheduler-policy.json")
 
-Write-Host "=== QA scheduler $script:Timezone ===" -ForegroundColor Cyan
+Write-Host "=== QA scheduler $($script:Timezone) ===" -ForegroundColor Cyan
 
-aws scheduler create-schedule-group --name $script:ScheduleGroup --region $script:Region 2>$null | Out-Null
+Invoke-AwsCli scheduler create-schedule-group --name $script:ScheduleGroup --region $script:Region | Out-Null
 
-aws iam get-role --role-name $script:SchedulerRoleName 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    aws iam create-role `
-        --role-name $script:SchedulerRoleName `
-        --assume-role-policy-document "file://$trust" | Out-Null
-    Write-Host "  Rol IAM creado: $script:SchedulerRoleName" -ForegroundColor Green
+$role = Invoke-AwsCli iam get-role --role-name $script:SchedulerRoleName
+if ($role.Code -ne 0) {
+    $cr = Invoke-AwsCli iam create-role --role-name $script:SchedulerRoleName --assume-role-policy-document $trustUri
+    if ($cr.Code -ne 0) { throw "No se creo el rol $($script:SchedulerRoleName). $($cr.Text)" }
+    Write-Host "  Rol IAM creado: $($script:SchedulerRoleName)" -ForegroundColor Green
     Start-Sleep -Seconds 12
 } else {
     Write-Host "  Rol IAM ya existe." -ForegroundColor Yellow
 }
 
-aws iam put-role-policy `
+$pol = Invoke-AwsCli iam put-role-policy `
     --role-name $script:SchedulerRoleName `
-    --policy-name "edugest-qa-start-stop" `
-    --policy-document "file://$policy" | Out-Null
+    --policy-name edugest-qa-start-stop `
+    --policy-document $policyUri
+if ($pol.Code -ne 0) { throw "put-role-policy fallo. $($pol.Text)" }
+
+$rdsInput = '{"DbInstanceIdentifier":"' + $script:RdsInstanceId + '"}'
 
 Set-QaSchedule `
     -Name "edugest-qa-rds-start" `
     -Expression "cron(55 8 * * ? *)" `
     -TargetArn "arn:aws:scheduler:::aws-sdk:rds:startDBInstance" `
-    -InputJson (@{ DbInstanceIdentifier = $script:RdsInstanceId } | ConvertTo-Json -Compress) `
+    -InputJson $rdsInput `
     -RoleArn $roleArn
 
 Set-QaSchedule `
     -Name "edugest-qa-rds-stop" `
     -Expression "cron(5 1 * * ? *)" `
     -TargetArn "arn:aws:scheduler:::aws-sdk:rds:stopDBInstance" `
-    -InputJson (@{ DbInstanceIdentifier = $script:RdsInstanceId } | ConvertTo-Json -Compress) `
+    -InputJson $rdsInput `
     -RoleArn $roleArn
 
 $ec2Id = Resolve-QaEc2Id $InstanceId
 if ($ec2Id) {
-    $ec2Input = (@{ InstanceIds = @($ec2Id) } | ConvertTo-Json -Compress)
+    $ec2Input = '{"InstanceIds":["' + $ec2Id + '"]}'
     Set-QaSchedule `
         -Name "edugest-qa-ec2-start" `
         -Expression $script:StartCron `
@@ -127,9 +114,9 @@ if ($ec2Id) {
         -RoleArn $roleArn
     Write-Host "EC2 programada: $ec2Id" -ForegroundColor Green
 } else {
-    Write-Host "No hay EC2 qa ($script:Ec2Name). Solo RDS quedo programado. Corre deploy-ec2.ps1 y vuelve a aplicar este script." -ForegroundColor Yellow
+    Write-Host "No hay EC2 qa ($($script:Ec2Name)). Solo RDS quedo programado. Corre deploy-ec2.ps1 y vuelve a aplicar este script." -ForegroundColor Yellow
 }
 
 Write-Host ""
-Write-Host "Ventana QA: 09:00-01:00 $script:Timezone (RDS 08:55-01:05)." -ForegroundColor Cyan
+Write-Host "Ventana QA: 09:00-01:00 $($script:Timezone) (RDS 08:55-01:05)." -ForegroundColor Cyan
 Write-Host "Amplify y SES no se apagan." -ForegroundColor DarkGray

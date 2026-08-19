@@ -8,21 +8,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\config.ps1"
+. "$PSScriptRoot\common.ps1"
 if ($Region) { $script:Region = $Region }
 
-function Get-SingleText([string]$Raw) {
-    if ([string]::IsNullOrWhiteSpace($Raw)) { return "" }
-    return ($Raw -split '\s+' | Where-Object { $_ -and $_ -ne "None" } | Select-Object -First 1).ToString().Trim()
-}
+Assert-AwsCli | Out-Null
 
-aws sts get-caller-identity --region $script:Region | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "Credenciales AWS invalidas." }
-
-$status = Get-SingleText (aws rds describe-db-instances `
+$status = (Invoke-AwsCli rds describe-db-instances `
     --db-instance-identifier $script:RdsInstanceId `
     --query "DBInstances[0].DBInstanceStatus" `
     --output text `
-    --region $script:Region 2>$null)
+    --region $script:Region).Out
 
 if (-not $status) {
     throw "No existe RDS '$($script:RdsInstanceId)'. Crea primero con aws/rds/create-rds.ps1"
@@ -30,27 +25,27 @@ if (-not $status) {
 
 Write-Host "RDS $script:RdsInstanceId estado=$status" -ForegroundColor Cyan
 
-$arn = Get-SingleText (aws rds describe-db-instances `
+$arn = (Invoke-AwsCli rds describe-db-instances `
     --db-instance-identifier $script:RdsInstanceId `
     --query "DBInstances[0].DBInstanceArn" `
     --output text `
-    --region $script:Region)
+    --region $script:Region).Out
 
-aws rds add-tags-to-resource `
+$tagged = Invoke-AwsCli rds add-tags-to-resource `
     --resource-name $arn `
-    --tags "Key=Project,Value=$script:Project" `
-           "Key=Environment,Value=$script:EnvName" `
-           "Key=Schedule,Value=office-hours" `
-    --region $script:Region | Out-Null
+    --tags "Key=Project,Value=$($script:Project)" "Key=Environment,Value=$($script:EnvName)" "Key=Schedule,Value=office-hours" `
+    --region $script:Region
+if ($tagged.Code -ne 0) { throw "No se pudieron etiquetar RDS. $($tagged.Text)" }
 
 if ($status -eq "available") {
     Write-Host "Poniendo backup retention = 0 (borra backups automaticos de QA)..." -ForegroundColor Yellow
-    aws rds modify-db-instance `
+    $mod = Invoke-AwsCli rds modify-db-instance `
         --db-instance-identifier $script:RdsInstanceId `
         --backup-retention-period 0 `
         --no-deletion-protection `
         --apply-immediately `
-        --region $script:Region | Out-Null
+        --region $script:Region
+    if ($mod.Code -ne 0) { throw "modify-db-instance fallo. $($mod.Text)" }
 } else {
     Write-Host "Instancia no available ($status). Tags listos; corre de nuevo este script cuando este available para retention=0." -ForegroundColor Yellow
 }
