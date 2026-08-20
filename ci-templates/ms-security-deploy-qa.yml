@@ -1,0 +1,76 @@
+name: Deploy QA
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: JAR to EC2 QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Package
+        run: mvn --no-transfer-progress -DskipTests package
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::060704331353:role/edugest-qa-gha
+          aws-region: us-east-1
+
+      - name: Upload JAR and restart via SSM
+        run: |
+          set -euo pipefail
+          BUCKET=$(aws ssm get-parameter --name /edugest/qa/artifact-bucket --query Parameter.Value --output text)
+          INSTANCE=$(aws ssm get-parameter --name /edugest/qa/instance-id --query Parameter.Value --output text)
+          STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE" --query 'Reservations[0].Instances[0].State.Name' --output text)
+          if [ "$STATE" = "stopped" ] || [ "$STATE" = "stopping" ]; then
+            aws ec2 start-instances --instance-ids "$INSTANCE"
+          fi
+          for i in $(seq 1 36); do
+            PING=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE" --query 'InstanceInformationList[0].PingStatus' --output text)
+            if [ "$PING" = "Online" ]; then break; fi
+            sleep 10
+          done
+          if [ "$PING" != "Online" ]; then
+            echo "SSM not Online on $INSTANCE"
+            exit 1
+          fi
+          aws s3 cp target/ms-security-0.1.0-SNAPSHOT.jar "s3://$BUCKET/ms-security.jar"
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE" \
+            --document-name AWS-RunShellScript \
+            --comment "edugest-qa-deploy-jar" \
+            --parameters commands="set -euxo pipefail","aws s3 cp s3://$BUCKET/ms-security.jar /opt/edugest/ms-security.jar","systemctl daemon-reload","systemctl enable --now ms-security","systemctl restart ms-security" \
+            --query 'Command.CommandId' --output text)
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE" --query Status --output text)
+            if [ "$STATUS" = "Success" ]; then exit 0; fi
+            if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE" --query StandardErrorContent --output text
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "SSM deploy timed out"
+          exit 1

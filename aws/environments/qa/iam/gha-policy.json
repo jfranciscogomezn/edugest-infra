@@ -1,0 +1,51 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Artifacts",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::__BUCKET__",
+        "arn:aws:s3:::__BUCKET__/*"
+      ]
+    },
+    {
+      "Sid": "SsmDeploy",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:SendCommand",
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommandInvocations",
+        "ssm:DescribeInstanceInformation",
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Ec2LookupStart",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+        "ec2:StartInstances"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AmplifyManualDeploy",
+      "Effect": "Allow",
+      "Action": [
+        "amplify:ListApps",
+        "amplify:GetApp",
+        "amplify:ListBranches",
+        "amplify:GetBranch",
+        "amplify:CreateDeployment",
+        "amplify:StartDeployment",
+        "amplify:GetJob"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

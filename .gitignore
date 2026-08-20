@@ -1,6 +1,7 @@
 # Env files with real secrets
 local/.env
 aws/rds/.env
+aws/environments/**/.env
 
 # Terraform state
 terraform/.terraform/

@@ -13,22 +13,20 @@ microservicio.
 ```
 edugest-infra/
 ├── local/                          # Infraestructura local (Docker Compose)
-│   ├── docker-compose.yml          # PostgreSQL, Redis, Kafka, MinIO, MailHog
-│   ├── .env.example                # Variables de entorno de ejemplo
-│   └── postgres/
-│       └── init/
-│           └── 01_db_security.sql  # DB db_security + usuario para ms-security
+│   ├── docker-compose.yml
+│   ├── .env.example
+│   └── postgres/init/
 │
 ├── aws/
-│   └── rds/                        # Scripts para RDS PostgreSQL en AWS
-│       ├── create-rds.ps1          # Crear instancia (Windows)
-│       ├── create-rds.sh           # Crear instancia (Linux/macOS)
-│       ├── init-rds-db.ps1         # Inicializar DB en RDS (Windows)
-│       ├── init-rds-db.sh          # Inicializar DB en RDS (Linux/macOS)
-│       └── restrict-ip.ps1         # Actualizar IP permitida en Security Group
+│   ├── environments/               # Bifurcación QA vs PROD
+│   │   ├── README.md               # Matriz: se crea / se omite
+│   │   ├── qa/                     # Free Tier, 09:00–01:00 COT
+│   │   └── prod/                   # 24/7; no copia atajos de qa/
+│   └── rds/                        # Crear/init RDS edugest-dev (origen QA)
 │
-├── terraform/                      # (Futuro) IaC con Terraform
-└── ci-templates/                   # (Futuro) Plantillas reutilizables de CI/CD
+├── terraform/                      # IaC (prod)
+└── ci-templates/                   # Plantillas CI/CD
+
 ```
 
 ---
@@ -81,12 +79,41 @@ docker compose -f local/docker-compose.yml down -v
 
 ---
 
-## AWS RDS (entorno cloud-dev compartido)
+## AWS — ambientes QA y producción
 
-Permite que el equipo de desarrollo apunte a una instancia RDS compartida sin
-necesidad de levantar PostgreSQL localmente.
+La cuenta AWS se parte en dos contratos. No se copian los atajos de QA a prod.
 
-Consulta la guía completa en [`aws/rds/README.md`](aws/rds/README.md).
+| Ambiente | Carpeta | Horario |
+|----------|---------|---------|
+| QA | [`aws/environments/qa/`](aws/environments/qa/) | 09:00–01:00 America/Bogota |
+| Producción | [`aws/environments/prod/`](aws/environments/prod/) | 24/7 |
+
+Matriz de qué se crea y qué se omite: [`aws/environments/README.md`](aws/environments/README.md).
+
+```powershell
+cd aws/environments/qa
+.\harden-rds.ps1
+.\deploy-ec2.ps1
+.\apply-schedule.ps1
+.\setup-ci.ps1
+.\bootstrap-ec2.ps1
+```
+
+Pipeline: push a `ms-security` (`master`) y `edugest-frontend` (`main`) dispara
+**Deploy QA** (OIDC → JAR en EC2 / SPA en Amplify). Detalle:
+[`aws/environments/qa/README.md`](aws/environments/qa/README.md) y
+[`ci-templates/`](ci-templates/).
+
+---
+
+## AWS RDS (origen de la instancia QA)
+
+Permite que el equipo apunte a RDS `edugest-dev` (`db_security`). La instancia se
+crea una vez con estos scripts; el ambiente QA la etiqueta, le quita backups y
+la programa en horario de oficina.
+
+Guía: [`aws/rds/README.md`](aws/rds/README.md).
+
 
 ### Flujo rápido
 
@@ -107,15 +134,18 @@ Consulta la guía completa en [`aws/rds/README.md`](aws/rds/README.md).
 
 | Repositorio                                                | Descripción                        |
 |------------------------------------------------------------|------------------------------------|
-| [ms-security](https://github.com/francisco-gomez2101/ms-security) | Autenticación, autorización, roles |
+| [ms-security](https://github.com/jfranciscogomezn/ms-security) | Autenticación, autorización, roles |
+| [edugest-frontend](https://github.com/jfranciscogomezn/edugest-frontend) | SPA Angular (Amplify QA) |
 
 ---
 
 ## Convenciones
 
 - **`local/`** — todo lo que corre en la máquina del desarrollador
-- **`aws/`** — scripts/config para AWS (RDS, S3, SES, etc.)
-- **`terraform/`** — módulos Terraform para producción/staging
+- **`aws/environments/qa/`** — Free Tier, EC2+RDS 09:00–01:00 COT
+- **`aws/environments/prod/`** — contrato 24/7; no hereda scripts de qa/
+- **`aws/rds/`** — crear/init de `edugest-dev` (lo consume QA)
+- **`terraform/`** — módulos Terraform de producción
 - **`ci-templates/`** — workflows de GitHub Actions reutilizables
 
 ---

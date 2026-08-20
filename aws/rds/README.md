@@ -3,7 +3,9 @@
 Scripts para crear y gestionar la instancia **AWS RDS PostgreSQL** usada como
 base de datos compartida del equipo de desarrollo.
 
-> Solo para `cloud-dev`. Produccion/staging iran con Terraform.
+> `edugest-dev` es el RDS del ambiente **QA**. Tras crearlo: `aws/environments/qa/harden-rds.ps1`
+> (retention 0 + tags) y `apply-schedule.ps1` (09:00–01:00 America/Bogota).
+> Producción no usa esta instancia ni estos scripts. Matriz: [`../environments/README.md`](../environments/README.md).
 
 ---
 
