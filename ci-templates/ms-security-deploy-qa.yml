@@ -18,13 +18,12 @@ jobs:
     name: JAR to EC2 QA
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    if: ${{ secrets.QA_AWS_ROLE_ARN != '' }}
     env:
       AWS_REGION: us-east-1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           java-version: "21"
           distribution: temurin
@@ -34,9 +33,9 @@ jobs:
         run: mvn --no-transfer-progress -DskipTests package
 
       - name: Configure AWS (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
-          role-to-assume: ${{ secrets.QA_AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::060704331353:role/edugest-qa-gha
           aws-region: us-east-1
 
       - name: Upload JAR and restart via SSM

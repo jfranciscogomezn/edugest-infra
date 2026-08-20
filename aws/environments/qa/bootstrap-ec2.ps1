@@ -12,10 +12,10 @@ $ErrorActionPreference = "Stop"
 if ($Region) { $script:Region = $Region }
 
 function Get-SsmValue([string]$Name, [switch]$Decrypt) {
-    $args = @("ssm", "get-parameter", "--name", $Name, "--query", "Parameter.Value", "--output", "text", "--region", $script:Region)
-    if ($Decrypt) { $args += "--with-decryption" }
-    $r = Invoke-AwsCli @args
-    if ($r.Code -ne 0 -or -not $r.Out) { throw "Falta parametro $Name. Corre setup-ci.ps1. $($r.Text)" }
+    $awsArgs = @("ssm", "get-parameter", "--name", $Name, "--query", "Parameter.Value", "--output", "text", "--region", $script:Region)
+    if ($Decrypt) { $awsArgs += "--with-decryption" }
+    $r = Invoke-AwsCli @awsArgs
+    if ($r.Code -ne 0 -or -not $r.Out) { throw ("Falta parametro {0}. Corre setup-ci.ps1. {1}" -f $Name, $r.Text) }
     return $r.Out
 }
 
@@ -53,6 +53,8 @@ $envBody = @(
     "APP_CORS_ALLOWED_ORIGINS=$cors"
     "APP_FRONTEND_BASE_URL=$front"
     "APP_MAIL_ENABLED=false"
+    "APP_SECURITY_JWT_KEYSTORE_PATH=file:/opt/edugest/keystore/ms-security.p12"
+    "JWT_KEYSTORE_PASSWORD=changeme_local"
 ) -join "`n"
 $caddyEnv = "API_HOSTNAME=$apiHost`n"
 $envFile = Join-Path $env:TEMP "ms-security.env"
@@ -90,19 +92,24 @@ $sent = Invoke-AwsCli ssm send-command `
     --region $script:Region
 if ($sent.Code -ne 0 -or -not $sent.Out) { throw "send-command: $($sent.Text)" }
 $cmdId = $sent.Out
-Write-Host "SSM command $cmdId — esperando..." -ForegroundColor Cyan
+Write-Host "SSM command $cmdId - esperando (hasta ~10 min)..." -ForegroundColor Cyan
 
 $status = ""
-for ($i = 0; $i -lt 40; $i++) {
+for ($i = 0; $i -lt 80; $i++) {
     Start-Sleep -Seconds 8
     $status = (Invoke-AwsCli ssm get-command-invocation --command-id $cmdId --instance-id $instanceId --query "Status" --output text --region $script:Region).Out
+    Write-Host ("  [{0}/80] {1}" -f ($i + 1), $status) -ForegroundColor DarkGray
     if ($status -eq "Success") { break }
-    if ($status -eq "Failed" -or $status -eq "Cancelled" -or $status -eq "TimedOut") {
-        $err = (Invoke-AwsCli ssm get-command-invocation --command-id $cmdId --instance-id $instanceId --query "StandardErrorContent" --output text --region $script:Region).StdOut
-        throw "Bootstrap SSM $status. $err"
-    }
+    if ($status -eq "Failed" -or $status -eq "Cancelled" -or $status -eq "TimedOut") { break }
 }
-if ($status -ne "Success") { throw "Bootstrap SSM no termino (status=$status)." }
 
-Write-Host "Runtime listo en $instanceId. Caddy https://$apiHost — el JAR lo sube GitHub Actions." -ForegroundColor Green
-Write-Host "Secret de GitHub: QA_AWS_ROLE_ARN = arn:aws:iam::$(Assert-AwsCli):role/$($script:GhaRoleName)" -ForegroundColor Yellow
+$stdout = (Invoke-AwsCli ssm get-command-invocation --command-id $cmdId --instance-id $instanceId --query "StandardOutputContent" --output text --region $script:Region).StdOut
+$stderr = (Invoke-AwsCli ssm get-command-invocation --command-id $cmdId --instance-id $instanceId --query "StandardErrorContent" --output text --region $script:Region).StdOut
+if ($status -ne "Success") {
+    Write-Host $stdout
+    Write-Host $stderr -ForegroundColor Yellow
+    throw ("Bootstrap SSM no termino. Status={0}" -f $status)
+}
+
+Write-Host "Runtime listo en $instanceId. Caddy https://$apiHost - el JAR lo sube GitHub Actions." -ForegroundColor Green
+Write-Host ("Secret de GitHub: QA_AWS_ROLE_ARN = arn:aws:iam::{0}:role/{1}" -f (Assert-AwsCli), $script:GhaRoleName) -ForegroundColor Yellow

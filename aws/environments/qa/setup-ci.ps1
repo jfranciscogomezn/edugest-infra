@@ -128,7 +128,9 @@ if ($branch.Code -ne 0) {
     if ($cb.Code -ne 0) { throw "create-branch Amplify: $($cb.Text)" }
 }
 $frontUrl = "https://$($script:AmplifyBranch).$appId.amplifyapp.com"
-Invoke-AwsCli amplify update-app --app-id $appId --custom-rules "source=/<*>,target=/index.html,status=200" --region $script:Region | Out-Null
+# 404-200: sirve JS/CSS si existen; solo el SPA fallback va a index.html.
+# status 200 en /<*> reescribe también los bundles y deja la app en blanco.
+Invoke-AwsCli amplify update-app --app-id $appId --custom-rules "source=/<*>,target=/index.html,status=404-200" --region $script:Region | Out-Null
 
 Set-SsmParam "$($script:SsmPrefix)/db-host" $rdsHost "String"
 Set-SsmParam "$($script:SsmPrefix)/db-password" $DbPassword "SecureString"

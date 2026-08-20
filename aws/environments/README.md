@@ -55,8 +55,8 @@ Prod no hereda el recorte Free Tier.
    aws/environments/qa/deploy-ec2.ps1      # t3.micro + SSM
    aws/environments/qa/apply-schedule.ps1  # EventBridge 09:00 / 01:00 COT
    aws/environments/qa/setup-ci.ps1        # S3, OIDC, Amplify, EIP (no destruye EC2)
-   aws/environments/qa/bootstrap-ec2.ps1   # Caddy + systemd por SSM
-   GitHub: secret QA_AWS_ROLE_ARN; push master/main
+   aws/environments/qa/bootstrap-ec2.ps1   # Caddy + systemd + keystore JWT por SSM
+   GitHub: workflow Deploy QA (ARN del rol en el YAML); push master/main
 
 2. PROD (cuando haya cliente que pague)
    No copiar scripts de qa/.

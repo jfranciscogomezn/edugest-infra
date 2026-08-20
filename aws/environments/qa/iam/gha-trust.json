@@ -13,8 +13,10 @@
         },
         "StringLike": {
           "token.actions.githubusercontent.com:sub": [
-            "repo:jfranciscogomezn/ms-security:ref:refs/heads/master",
-            "repo:jfranciscogomezn/edugest-frontend:ref:refs/heads/main"
+            "repo:jfranciscogomezn/ms-security:*",
+            "repo:jfranciscogomezn@13456538/ms-security@1299655321:*",
+            "repo:jfranciscogomezn/edugest-frontend:*",
+            "repo:jfranciscogomezn@13456538/edugest-frontend@1329078814:*"
           ]
         }
       }

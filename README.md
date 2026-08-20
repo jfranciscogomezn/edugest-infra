@@ -95,7 +95,14 @@ cd aws/environments/qa
 .\harden-rds.ps1
 .\deploy-ec2.ps1
 .\apply-schedule.ps1
+.\setup-ci.ps1
+.\bootstrap-ec2.ps1
 ```
+
+Pipeline: push a `ms-security` (`master`) y `edugest-frontend` (`main`) dispara
+**Deploy QA** (OIDC → JAR en EC2 / SPA en Amplify). Detalle:
+[`aws/environments/qa/README.md`](aws/environments/qa/README.md) y
+[`ci-templates/`](ci-templates/).
 
 ---
 
@@ -127,7 +134,8 @@ Guía: [`aws/rds/README.md`](aws/rds/README.md).
 
 | Repositorio                                                | Descripción                        |
 |------------------------------------------------------------|------------------------------------|
-| [ms-security](https://github.com/francisco-gomez2101/ms-security) | Autenticación, autorización, roles |
+| [ms-security](https://github.com/jfranciscogomezn/ms-security) | Autenticación, autorización, roles |
+| [edugest-frontend](https://github.com/jfranciscogomezn/edugest-frontend) | SPA Angular (Amplify QA) |
 
 ---
 

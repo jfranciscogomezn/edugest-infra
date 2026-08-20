@@ -18,11 +18,10 @@ jobs:
     name: SPA to Amplify QA
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: ${{ secrets.QA_AWS_ROLE_ARN != '' }}
     env:
       AWS_REGION: us-east-1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v4
         with:
@@ -30,9 +29,9 @@ jobs:
           cache: npm
 
       - name: Configure AWS (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
-          role-to-assume: ${{ secrets.QA_AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::060704331353:role/edugest-qa-gha
           aws-region: us-east-1
 
       - name: Inject API URL and build
